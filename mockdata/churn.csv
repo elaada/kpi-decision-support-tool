@@ -1,0 +1,7 @@
+;;;;;;
+;customer_id;date;status;;;
+;A;2026-01-10;active;;;
+;B;2026-01-15;churned;;;
+;C;2026-01-20;active;;;
+;A;2026-02-08;churned;;;
+;B;2026-02-11;active;;;
