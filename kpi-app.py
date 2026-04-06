@@ -1047,6 +1047,8 @@ if final_kpi_df is not None:
     st.divider()
     st.subheader("Ask about the KPIs")
 
+    st.info("AI insights require a valid OpenAI API key with available credits.")
+
     with st.form("question_form", clear_on_submit=True):
         question = st.text_input(
             "Type your question",
