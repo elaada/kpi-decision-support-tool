@@ -580,217 +580,81 @@ def format_metric_label(metric_name):
         "active_customers": "Active customers"
     }
     return labels.get(metric_name, metric_name)
+
 def answer_question(question: str, final_kpi_df, metrics):
     question = question.lower().strip()
     response = ""
-
+    
+   
     has_revenue = "average_revenue" in metrics
     has_churn = "average_churn" in metrics
-    has_active_customers = "average_active_customers" in metrics
+    has_active = "average_active_customers" in metrics
+    
+  
     metric_name = detect_metric_from_question(question)
 
-    # Month-specific metric question
-    if metric_name is not None:
+  
+    if metric_name:
         target_month, metric_value = get_metric_value_for_month(final_kpi_df, metric_name, question)
-
         if target_month is not None:
             label = format_metric_label(metric_name)
-
             if metric_value is not None:
-                return f"{label} in {target_month.strftime('%B %Y')}: {format_metric_value(metric_name, metric_value)}"
+                return f"📅 **{label} for {target_month.strftime('%B %Y')}**: {format_metric_value(metric_name, metric_value)}"
             else:
-                return f"{label} data for {target_month.strftime('%B %Y')} is not available."
+                return f"ℹ️ I found the date **{target_month.strftime('%B %Y')}**, but there is no data for **{label}** in that period."
 
-    # Month-on-month / trend comparison
-        if metric_name is not None and (
-            "month on month" in question
-            or "mom" in question
-            or "trend" in question
-            or "compare" in question
-            or "performance" in question
-            or "vs" in question
-            ):
-            comparison = compare_metric_last_two_months(final_kpi_df, metric_name)
-
-            if comparison is not None:
-                label = format_metric_label(metric_name)
-
-                if metric_name == "churn":
-                    change_text = f"{comparison['change']:.2%}"
-                else:
-                    change_text = format_metric_value(metric_name, comparison["change"])
-
-                response = f"{label} comparison\n\n"
-                response += f"- {comparison['prev_month'].strftime('%B %Y')}: {format_metric_value(metric_name, comparison['prev_val'])}\n"
-                response += f"- {comparison['last_month'].strftime('%B %Y')}: {format_metric_value(metric_name, comparison['last_val'])}\n"
-                response += f"- Change: {change_text}\n"
-
-                if comparison["pct_change"] is not None:
-                    response += f"- Percentage change: {comparison['pct_change']:.2%}"
-
-                return response
-    if "summary" in question or "overall" in question or "general" in question or "going on" in question:
-        response += "📊 Summary\n\n"
-
-        if has_revenue and "overall_revenue_change_percentage" in metrics and metrics["overall_revenue_change_percentage"] is not None:
-            if metrics["overall_revenue_change"] > 0:
-                response += "- Revenue trend is increasing\n"
-            else:
-                response += "- Revenue trend is decreasing\n"
-
-            if "last_revenue_change_percentage" in metrics and metrics["last_revenue_change_percentage"] is not None:
-                if metrics["last_revenue_change_percentage"] > 0:
-                    response += "- Last period revenue increased\n"
-                else:
-                    response += "- Last period revenue decreased\n"
+  
+    if any(k in question for k in ["summary", "overall", "general", "going on", "risk", "alert", "emergency"]):
+        is_risk_query = any(k in question for k in ["risk", "alert", "emergency"])
+        
+        if is_risk_query:
+            response = "⚠️ **Risk Assessment**\n\n"
+            alerts = []
+            if metrics.get("high_churn_alert"): alerts.append("- **High Churn**: Average churn is above 5%.")
+            if metrics.get("revenue_down_alert"): alerts.append("- **Revenue Drop**: Overall revenue trend is negative.")
+            if metrics.get("spike_churn_alert"): alerts.append("- **Churn Spike**: Significant increase in churn last month.")
+            if metrics.get("active_customers_down_alert"): alerts.append("- **User Loss**: Active customers dropped by >5% recently.")
+            
+            response += "\n".join(alerts) if alerts else "✅ No major alerts detected in the current data."
+            return response
         else:
-            response += "- Revenue data not available or insufficient\n"
+           
+            response = "📊 **KPI Executive Summary**\n\n"
+            if has_revenue:
+                direction = "📈 increasing" if metrics.get("overall_revenue_change", 0) > 0 else "📉 decreasing"
+                response += f"- **Revenue:** The trend is {direction}.\n"
+            if has_churn:
+                status = "🔴 high" if metrics.get("high_churn_alert") else "🟢 stable"
+                response += f"- **Churn:** Currently {status} (Avg: {metrics['average_churn']:.2%}).\n"
+            if has_active:
+                response += f"- **Users:** {metrics['last_active_customers']:,.0f} active customers last period.\n"
+            
+            return response
 
-        if has_churn:
-            if metrics["average_churn"] > 0.05:
-                response += "- Average churn is high\n"
-            else:
-                response += "- Average churn is within limits\n"
+    if metric_name and any(k in question for k in ["trend", "compare", "performance", "vs", "mom", "month on month", "loosing", "losing", "dropping", "growing", "growth"]):
+        comparison = compare_metric_last_two_months(final_kpi_df, metric_name)
+        if comparison:
+            label = format_metric_label(metric_name)
+            change_val = format_metric_value(metric_name, comparison['change'])
+            pct_text = f" ({comparison['pct_change']:.2%})" if comparison['pct_change'] is not None else ""
+            
+            return (f"🔄 **{label} Comparison**\n\n"
+                    f"- {comparison['prev_month'].strftime('%B %Y')}: {format_metric_value(metric_name, comparison['prev_val'])}\n"
+                    f"- {comparison['last_month'].strftime('%B %Y')}: {format_metric_value(metric_name, comparison['last_val'])}\n"
+                    f"- **Change:** {change_val}{pct_text}")
 
-            if "high_last_churn_alert" in metrics and metrics["high_last_churn_alert"]:
-                response += "- Last period churn is above the limit\n"
-        else:
-            response += "- Churn data not available or insufficient\n"
 
-        if has_active_customers and "active_customers_change_percentage" in metrics and metrics["active_customers_change_percentage"] is not None:
-            if metrics["active_customers_change_percentage"] > 0:
-                response += "- Active customers increased in the last period\n"
-            else:
-                response += "- Active customers decreased in the last period\n"
-        elif has_active_customers:
-            response += "- Active customer data available, but trend needs more than one period\n"
-        else:
-            response += "- Active customer data not available or insufficient\n"
-
-        response += "\nInsight:\n"
-        if (
-            metrics.get("revenue_down_alert", False)
-            and metrics.get("high_last_churn_alert", False)
-            and metrics.get("active_customers_down_alert", False)
-        ):
-            response += "- Revenue is falling, churn is rising, and active customers are declining. This suggests a serious retention and engagement risk.\n"
-        elif (
-            metrics.get("revenue_down_alert", False)
-            and metrics.get("high_last_churn_alert", False)
-        ):
-            response += "- Revenue is falling while churn is elevated. This may indicate retention issues.\n"
-        elif (
-            metrics.get("revenue_down_alert", False)
-            and metrics.get("active_customers_down_alert", False)
-        ):
-            response += "- Revenue and active customers are both declining. This may indicate reduced product adoption.\n"
-        elif metrics.get("revenue_down_alert", False):
-            response += "- Revenue is declining.\n"
-        elif metrics.get("high_last_churn_alert", False):
-            response += "- Churn increased in the last period.\n"
-        else:
-            response += "- No major combined risk detected from the available data.\n"
-        return response
+    if metric_name == "churn" and has_churn:
+        return f"📉 **Churn Stats:** Average is {metrics['average_churn']:.2%}, with the last period at {metrics['last_churn']:.2%}."
     
-    elif "risk" in question or "alert" in question or "emergency" in question or "summarize" in question:
-        response += "⚠️ Risk check\n\n"
-
-        if metrics.get("high_churn_alert", False):
-            response += "- Churn is high\n"
-        if metrics.get("revenue_down_alert", False):
-            response += "- Revenue trend is negative\n"
-        if metrics.get("sharp_last_drop_alert", False):
-            response += "- Revenue drop is sharp\n"
-        if metrics.get("spike_churn_alert", False):
-            response += "- Churn spike detected\n"
-        if metrics.get("high_last_churn_alert", False):
-            response += "- Last churn is high\n"
-        if metrics.get("active_customers_down_alert", False):
-            response += "- Active customers dropped sharply\n"
-
-        if (
-            not metrics.get("high_churn_alert", False)
-            and not metrics.get("revenue_down_alert", False)
-            and not metrics.get("sharp_last_drop_alert", False)
-            and not metrics.get("spike_churn_alert", False)
-            and not metrics.get("high_last_churn_alert", False)
-            and not metrics.get("active_customers_down_alert", False)
-        ):
-            response += "- No major alert detected\n"
-        return response
+    if metric_name == "revenue" and has_revenue:
+        return f"💰 **Revenue Stats:** Average monthly revenue is {metrics['average_revenue']:,.0f}."
     
-    if "churn" in question:
-        df = final_kpi_df.copy()
+    if metric_name == "active_customers" and has_active:
+        return f"👥 **User Stats:** Average active customers: {metrics['average_active_customers']:,.0f}."
 
-        if "month" not in df.columns or "churn" not in df.columns:
-            return "Churn data is not available."
-
-        target_month = extract_month_from_question(question, df["month"].dropna().unique())
-
-        if target_month is not None:
-            row = df[df["month"] == target_month]
-
-            if not row.empty and pd.notna(row["churn"].iloc[0]):
-                return f"Churn in {target_month.strftime('%B %Y')}: {row['churn'].iloc[0]:.2%}"
-            else:
-                return f"Churn data for {target_month.strftime('%B %Y')} is not available."
-    elif "churn" in question:
-        if has_churn:
-            response += "📉 Churn analysis\n\n"
-            response += f"- Average churn: {metrics['average_churn']:.2%}\n"
-            response += f"- Last churn: {metrics['last_churn']:.2%}\n"
-
-            if metrics.get("high_last_churn_alert", False):
-                response += "- Last period churn is above the limit\n"
-
-            if metrics.get("spike_churn_alert", False):
-                response += "- Churn increased sharply in the last period\n"
-        else:
-            response += "Churn data is not available or insufficient."
-
-    elif "active customers" in question or "customers" in question or "usage" in question or "active" in question:
-        if has_active_customers:
-            response += "👥 Active customers analysis\n\n"
-            response += f"- Average active customers: {metrics['average_active_customers']:,.0f}\n"
-            response += f"- Last active customers: {metrics['last_active_customers']:,.0f}\n"
-
-            if "active_customers_change_percentage" in metrics and metrics["active_customers_change_percentage"] is not None:
-                response += f"- Change: {metrics['active_customers_change_percentage']:.2%}\n"
-
-            if metrics.get("active_customers_down_alert", False):
-                response += "- Active customers dropped significantly\n"
-        else:
-            response += "Active customer data is not available or insufficient."
-
-    elif "revenue" in question and ("trend" in question or "change" in question):
-        if has_revenue and "overall_revenue_change_percentage" in metrics and metrics["overall_revenue_change_percentage"] is not None:
-            response += "💰 Revenue analysis\n\n"
-
-            if metrics["overall_revenue_change"] > 0:
-                response += "- Overall trend: increasing\n"
-            else:
-                response += "- Overall trend: decreasing\n"
-
-            response += f"- Overall change: {metrics['overall_revenue_change_percentage']:.2%}\n"
-
-            if "last_revenue_change_percentage" in metrics and metrics["last_revenue_change_percentage"] is not None:
-                if metrics["last_revenue_change_percentage"] > 0:
-                    response += "- Last period: increase\n"
-                else:
-                    response += "- Last period: decrease\n"
-        else:
-            response += "Revenue trend data is not available or insufficient."
-
-    elif "revenue" in question:
-        if has_revenue:
-            response += f"Average revenue: {metrics['average_revenue']:,.0f}"
-        else:
-            response += "Revenue data is not available or insufficient."
-
-    else:
-        return ask_ai(question, final_kpi_df, metrics)
-
-    return response
+   
+    return ask_ai(question, final_kpi_df, metrics)
 
 
 # -----------------------------
